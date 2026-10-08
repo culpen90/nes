@@ -20,6 +20,14 @@ The historical first beta, **1.0.0-beta.1**, remains available:
 
 See [release and signing instructions](docs/releases.md) for production builds, checksum verification, and updates.
 
+### New version notifications
+
+Enable **Release alerts** in **Info → Updates** to receive one notification for each published beta or stable version newer than your installed app. The app offers this option once on first launch; choosing **Later** keeps alerts off until you enable them. On Android 13 or later, allow the notification permission when prompted. If Android blocks alerts, use **Android settings** in the Updates dialog to allow the **New versions** channel.
+
+With alerts enabled, the app checks public GitHub release metadata about every six hours while online, and requests a check when opened if the last successful check was at least an hour ago. Android may delay background checks. Tap a notification to open that version's release page in your browser, then download and install its APK. You can turn alerts off in **Info → Updates** at any time.
+
+Gameplay works offline. Games and saves stay in private storage on your phone; release checks do not upload them. See [notification behavior and permissions](docs/releases.md#new-version-notifications) for details.
+
 ## Features
 
 - Import iNES / NES 2.0 `.nes` cartridges or a ZIP containing one game.
@@ -28,7 +36,8 @@ See [release and signing instructions](docs/releases.md) for production builds, 
 - Sharp, aspect-correct video in portrait and landscape, with stereo audio.
 - Pause, restart, mute, and a quick-save slot for each cartridge.
 - Automatic resume and cartridge battery saves.
-- Offline play with private on-device storage; no network or broad storage permission.
+- Offline play with private on-device storage and no broad storage permission.
+- Optional notifications for new beta and stable releases.
 
 ## Start playing
 
@@ -125,14 +134,30 @@ adb shell am start -n com.culpen.nes/.MainActivity
 
 Built and run on a wirelessly connected Samsung **SM-S938U**, Android API **37**, on **2026-10-08**. The included demo runs at approximately **60 fps** on that device. Functional tests against real FCEUmm cover movement, boost, star collection and score, audio, boundaries, reset, and save/restore.
 
-**Verified:** Android lint passes; all **7 device tests** pass; native regression checks pass for battery RAM persistence, cartridge validation, corrupt/wrong-cartridge states, and reloads. Manual phone checks cover file-picker import, quick save/load, and rotation while paused. Physical Bluetooth/USB controller hardware was not available for testing; its standard Android input handling is implemented.
+The recorded emulator validation passed Android lint, the original **7 device tests**, and native regression checks for battery RAM persistence, cartridge validation, corrupt/wrong-cartridge states, and reloads. Manual phone checks covered file-picker import, quick save/load, and rotation while paused. These results predate release notifications. Physical Bluetooth/USB controller hardware was not available for testing; its standard Android input handling is implemented.
+
+Release notification changes passed the expanded **14-test device suite** on isolated Android **API 26** and **API 36** emulators on **2026-10-08**, plus debug/release lint and builds and **46 release-tooling/version tests**. Checks cover actual notification posting, duplicates, disabled permissions/channels, cancellation, persisted scheduling, and beta/stable filtering. Notification behavior has not yet been checked on the physical phone.
+
+A live GitHub check posted the existing beta.2 alert on the API 26 emulator. Tapping it passed the exact release URL to a temporary browser handler; this verified the Android handoff, without loading the website. The API 36 permission UI was also exercised through denial and subsequent grant.
 
 Build the dependency-free device test APK and run Android lint:
 
 ```sh
-./gradlew lintDebug assembleDebug assembleDebugAndroidTest
+./gradlew lintDebug assembleDebug assembleDebugAndroidTest testDebugUnitTest
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 adb install -r app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+```
+
+On Android 13 / API 33 or later, grant notification permission before running
+the delivery tests. The app's **New versions** channel must also be enabled:
+
+```sh
+adb shell pm grant com.culpen.nes android.permission.POST_NOTIFICATIONS
+```
+
+Run the instrumentation suite:
+
+```sh
 adb shell am force-stop com.culpen.nes
 adb shell am instrument -w com.culpen.nes.test/com.culpen.nes.EmulatorInstrumentation
 ```
@@ -154,10 +179,10 @@ Regenerate the original cartridge with `python3 tools/generate_demo.py`. [tests/
 
 | Path | Purpose |
 | --- | --- |
-| `app/src/main/java/com/culpen/nes/` | Library, Android UI, emulation thread, audio, touch and hardware input |
+| `app/src/main/java/com/culpen/nes/` | Library, Android UI, emulation thread, audio, input, and release notifications |
 | `app/src/main/cpp/` | Native frontend, JNI bridge, CMake, native smoke runner |
 | `app/src/main/assets/` | Original Star Garden cartridge and GPL license |
-| `app/src/androidTest/` | Native and touch-control device tests |
+| `app/src/androidTest/` | Native, touch-control, and release-notification device tests |
 | `third_party/fceumm/` | Pinned FCEUmm source and upstream notices |
 | `tools/` | Demo generator, phone build/install helper, and signed release builder |
 | `tests/` | Original cartridge functional tests |

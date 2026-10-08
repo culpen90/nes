@@ -78,8 +78,9 @@ The core is process-global. Keep native calls serialized on the emulation
 session thread, and preserve lifecycle cleanup, input release, and save
 persistence when changing the frontend. Read [the native frontend notes](app/src/main/cpp/README.md)
 before changing JNI, audio, or save-state behavior. Maintain the app's offline
-behavior and private storage model, and explain any proposed change to these
-behaviors in the pull request.
+gameplay and private storage model. Optional release notifications fetch public
+GitHub metadata only after the user enables alerts; cartridges and saves must
+remain local. Explain any proposed change to these behaviors in the pull request.
 
 ## Validate your change
 
@@ -91,7 +92,8 @@ below. State any checks you could not run in the pull request.
 ### Android build and lint
 
 ```sh
-./gradlew lintDebug assembleDebug assembleDebugAndroidTest
+./gradlew lintDebug assembleDebug assembleDebugAndroidTest testDebugUnitTest
+python3 -m unittest discover -s tests -p 'test_*release*.py' -v
 ```
 
 ### Android device tests
@@ -105,6 +107,18 @@ With one target attached, install both APKs and run the custom instrumentation:
 ```sh
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 adb install -r app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+```
+
+On Android 13 / API 33 or later, grant notification permission before the
+delivery tests, and keep the **New versions** channel enabled:
+
+```sh
+adb shell pm grant com.culpen.nes android.permission.POST_NOTIFICATIONS
+```
+
+Then run the suite:
+
+```sh
 adb shell am force-stop com.culpen.nes
 adb shell am instrument -w com.culpen.nes.test/com.culpen.nes.EmulatorInstrumentation
 ```
@@ -125,6 +139,17 @@ the library. When accessory hardware is available, controller changes should be
 checked on it; otherwise report external input as unverified. Report the device
 and input method actually tested. External accessory testing is optional and
 does not block first stable; full on-device touch testing is required.
+
+For release notification changes, exercise the first-launch offer and
+**Info → Updates**, including enabling and disabling alerts, Android 13+
+permission grant and denial, and a blocked **New versions** channel. Verify
+that published newer betas and stable releases each alert once, repeated checks
+do not alert again, and tapping different alerts opens their respective release
+pages in a browser. Check that disabling alerts cancels pending work, offline
+checks can recover when connectivity returns, and gameplay still works offline.
+Use controlled release fixtures for these checks; do not publish fake releases
+to test notifications. Record which permission, scheduling, and browser behaviors
+were actually observed on a device.
 
 ### Native host tests
 
