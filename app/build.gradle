@@ -1,5 +1,15 @@
 plugins { id 'com.android.application' }
 
+def signingPath = System.getenv('POCKET_NES_SIGNING_PROPERTIES') ?: new File(System.getProperty('user.home'), '.config/pocket-nes/release-signing.properties').path
+def signingFile = file(signingPath)
+def releaseCredentials = new Properties()
+if (signingFile.isFile()) {
+    signingFile.withInputStream { releaseCredentials.load(it) }
+    ['storeFile', 'storePassword', 'keyAlias', 'keyPassword'].each { name ->
+        if (!releaseCredentials.getProperty(name)) throw new GradleException("Release signing properties are missing ${name}.")
+    }
+}
+
 android {
     namespace 'com.culpen.nes'
     compileSdk 36
@@ -9,12 +19,30 @@ android {
         minSdk 26
         targetSdk 36
         versionCode 1
-        versionName '1.0'
+        versionName '1.0.0-beta.1'
         ndk { abiFilters 'arm64-v8a', 'x86_64' }
         externalNativeBuild { cmake { arguments '-DANDROID_STL=c++_static'; cppFlags '-std=c++17' } }
         testInstrumentationRunner 'com.culpen.nes.EmulatorInstrumentation'
     }
     externalNativeBuild { cmake { path 'src/main/cpp/CMakeLists.txt'; version '3.22.1' } }
     compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
-    buildTypes { release { minifyEnabled false } }
+    signingConfigs {
+        if (signingFile.isFile()) {
+            release {
+                storeFile file(releaseCredentials.getProperty('storeFile'))
+                storePassword releaseCredentials.getProperty('storePassword')
+                keyAlias releaseCredentials.getProperty('keyAlias')
+                keyPassword releaseCredentials.getProperty('keyPassword')
+            }
+        }
+    }
+    buildTypes {
+        release {
+            debuggable false
+            minifyEnabled true
+            shrinkResources true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            if (signingFile.isFile()) signingConfig signingConfigs.release
+        }
+    }
 }

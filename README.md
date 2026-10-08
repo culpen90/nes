@@ -8,6 +8,16 @@ An original playable cartridge, **Star Garden**, is included. Open the app and t
 
 [Landscape layout](docs/images/landscape.png)
 
+## Download
+
+The first release is **1.0.0-beta.1**, for Android 8.0 or later on `arm64-v8a` and `x86_64` devices.
+
+- [GitHub beta release](https://github.com/culpen90/nes/releases/tag/v1.0.0-beta.1)
+- [Signed production APK](https://github.com/culpen90/nes/releases/download/v1.0.0-beta.1/pocket-nes-1.0.0-beta.1.apk)
+- [SHA-256 checksums](https://github.com/culpen90/nes/releases/download/v1.0.0-beta.1/SHA256SUMS)
+
+See [release and signing instructions](docs/releases.md) for production builds, checksum verification, and updates.
+
 ## Features
 
 - Import iNES / NES 2.0 `.nes` cartridges or a ZIP containing one game.
@@ -62,6 +72,16 @@ Set `JAVA_HOME` to a supported JDK. Set `ANDROID_HOME` to your SDK directory, or
 ```
 
 APK output: `app/build/outputs/apk/debug/app-debug.apk`.
+
+### Production release
+
+The release variant uses a private signing key, R8 optimization, and resource shrinking. Configure your own signing key outside the repository, then run:
+
+```sh
+./tools/build-release.sh
+```
+
+The first beta uses `versionName` **1.0.0-beta.1** and `versionCode` **1**. See [release builds](docs/releases.md) for signing configuration and output files. Android updates require the same signing key and an increased version code.
 
 ### Wireless debugging
 
@@ -126,7 +146,7 @@ Regenerate the original cartridge with `python3 tools/generate_demo.py`. [tests/
 | `app/src/main/assets/` | Original Star Garden cartridge and GPL license |
 | `app/src/androidTest/` | Native and touch-control device tests |
 | `third_party/fceumm/` | Pinned FCEUmm source and upstream notices |
-| `tools/` | Demo generator and phone build/install helper |
+| `tools/` | Demo generator, phone build/install helper, and signed release builder |
 | `tests/` | Original cartridge functional tests |
 
 ## Saves and current scope

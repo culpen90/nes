@@ -182,7 +182,10 @@ public final class MainActivity extends Activity implements EmulatorSession.List
     }
     private void leaveGame() { releaseInput(); session.stopGame(); playing = null; paused = false; showLibrary(); }
     private void about() {
-        new AlertDialog.Builder(this).setTitle("Pocket NES 1.0")
+        String version;
+        try { version = getPackageManager().getPackageInfo(getPackageName(), 0).versionName; }
+        catch (android.content.pm.PackageManager.NameNotFoundException e) { version = ""; }
+        new AlertDialog.Builder(this).setTitle("Pocket NES " + version)
                 .setMessage("A pocket-sized home for your NES cartridges.\n\nImport .nes files with the Android file picker. ZIP archives may contain one .nes game. Games and saves stay on your phone.\n\nStar Garden is an original included demo.\n\nEmulation: FCEUmm / libretro, licensed under GPL version 2 or later. Pocket NES is distributed under the same license.\n\nNintendo and NES are trademarks of Nintendo. This is an independent project.")
                 .setPositiveButton("Done", null).setNeutralButton("License", (d, w) -> showLicense()).show();
     }
