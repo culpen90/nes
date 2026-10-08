@@ -1,0 +1,200 @@
+name: Automatic releases
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Queued GitHub concurrency runs can be replaced by newer pushes. Each planner
+# checks out current main and includes every unreleased commit in its range.
+concurrency:
+  group: pocket-nes-releases
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  plan:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      # GitHub hides draft releases from callers without push access. Planning
+      # makes only GET requests, but needs this scope to recover pending drafts.
+      contents: write
+      pull-requests: read
+    outputs:
+      release: ${{ steps.plan.outputs.release }}
+      version_name: ${{ steps.plan.outputs.version_name }}
+      version_code: ${{ steps.plan.outputs.version_code }}
+      target_sha: ${{ steps.plan.outputs.target_sha }}
+      head_sha: ${{ steps.plan.outputs.head_sha }}
+      prerelease: ${{ steps.plan.outputs.prerelease }}
+    steps:
+      - name: Read current main and all tags
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Test release automation
+        run: python3 -m unittest discover -s tests -p 'test_*release*.py' -v
+      - name: Plan the next release
+        id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p .release-plan
+          python3 tools/semver_release.py --repo "$GITHUB_REPOSITORY" \
+            --plan-file .release-plan/release-plan.json \
+            --notes-file .release-plan/release-notes.md \
+            --github-output "$GITHUB_OUTPUT"
+      - name: Save the immutable release plan
+        if: steps.plan.outputs.release == 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: release-plan
+          path: |
+            .release-plan/release-plan.json
+            .release-plan/release-notes.md
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 7
+
+  build:
+    needs: plan
+    if: needs.plan.outputs.release == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    permissions:
+      contents: read
+    env:
+      POCKET_NES_VERSION_NAME: ${{ needs.plan.outputs.version_name }}
+      POCKET_NES_VERSION_CODE: ${{ needs.plan.outputs.version_code }}
+      POCKET_NES_TARGET_SHA: ${{ needs.plan.outputs.target_sha }}
+      POCKET_NES_PRERELEASE: ${{ needs.plan.outputs.prerelease }}
+      POCKET_NES_SIGNING_CERT_SHA256: ${{ vars.POCKET_NES_SIGNING_CERT_SHA256 }}
+    steps:
+      - name: Check out the planned source
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: ${{ needs.plan.outputs.target_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+        with:
+          name: release-plan
+          path: .release-plan
+      - name: Verify the planned source and automation
+        run: |
+          test "$(git rev-parse HEAD)" = "$POCKET_NES_TARGET_SHA"
+          python3 -m unittest discover -s tests -p 'test_*release*.py' -v
+      - name: Test the native emulator
+        run: |
+          cmake -S app/src/main/cpp -B build/native -DCMAKE_BUILD_TYPE=Release
+          cmake --build build/native --parallel 2
+          ctest --test-dir build/native --output-on-failure
+          build/native/nescore_smoke app/src/main/assets/demo.nes
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3
+        with:
+          packages: 'platform-tools platforms;android-36 build-tools;35.0.0 ndk;28.2.13676358 cmake;3.22.1'
+      - name: Prepare private signing files
+        env:
+          POCKET_NES_KEYSTORE_BASE64: ${{ secrets.POCKET_NES_KEYSTORE_BASE64 }}
+          POCKET_NES_STORE_PASSWORD: ${{ secrets.POCKET_NES_STORE_PASSWORD }}
+          POCKET_NES_KEY_ALIAS: ${{ secrets.POCKET_NES_KEY_ALIAS }}
+          POCKET_NES_KEY_PASSWORD: ${{ secrets.POCKET_NES_KEY_PASSWORD }}
+        run: |
+          export POCKET_NES_SIGNING_PROPERTIES="$RUNNER_TEMP/pocket-nes-signing/release-signing.properties"
+          printf 'POCKET_NES_SIGNING_PROPERTIES=%s\n' "$POCKET_NES_SIGNING_PROPERTIES" >> "$GITHUB_ENV"
+          python3 - <<'PY'
+          import base64
+          import os
+          from pathlib import Path
+
+          required = ('POCKET_NES_KEYSTORE_BASE64', 'POCKET_NES_STORE_PASSWORD',
+                      'POCKET_NES_KEY_ALIAS', 'POCKET_NES_KEY_PASSWORD',
+                      'POCKET_NES_SIGNING_CERT_SHA256')
+          if any(not os.environ.get(key) for key in required):
+              raise SystemExit('Configure all four signing secrets and the signing certificate repository variable first.')
+          os.umask(0o077)
+          directory = Path(os.environ['POCKET_NES_SIGNING_PROPERTIES']).parent
+          directory.mkdir(parents=True, exist_ok=True)
+          keystore = directory / 'release.keystore'
+          keystore.write_bytes(base64.b64decode(os.environ['POCKET_NES_KEYSTORE_BASE64'], validate=True))
+
+          # Java Properties uses ISO-8859-1 and treats whitespace and escapes
+          # specially. Unicode escapes preserve passwords exactly.
+          def escape(value):
+              return ''.join('\\u%04x' % int.from_bytes(value.encode('utf-16-be')[i:i+2], 'big')
+                             for i in range(0, len(value.encode('utf-16-be')), 2))
+
+          fields = {'storeFile': str(keystore),
+                    'storePassword': os.environ['POCKET_NES_STORE_PASSWORD'],
+                    'keyAlias': os.environ['POCKET_NES_KEY_ALIAS'],
+                    'keyPassword': os.environ['POCKET_NES_KEY_PASSWORD']}
+          Path(os.environ['POCKET_NES_SIGNING_PROPERTIES']).write_text(
+              ''.join(f'{key}={escape(value)}\n' for key, value in fields.items()), encoding='ascii')
+          PY
+      - name: Build and verify the signed production APK
+        run: ./tools/build-release.sh
+      - name: Remove private signing material
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/pocket-nes-signing"
+      - name: Save the verified production release
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: signed-release
+          path: |
+            build/release/pocket-nes-${{ needs.plan.outputs.version_name }}.apk
+            build/release/SHA256SUMS
+            build/release/release.json
+            .release-plan/release-plan.json
+            .release-plan/release-notes.md
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    needs: [plan, build]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Check out the verified publisher
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: ${{ needs.plan.outputs.target_sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+        with:
+          name: signed-release
+          path: ${{ runner.temp }}/signed-release
+      - name: Publish after artifact and target verification
+        env:
+          GH_TOKEN: ${{ github.token }}
+          POCKET_NES_SIGNING_CERT_SHA256: ${{ vars.POCKET_NES_SIGNING_CERT_SHA256 }}
+        run: |
+          python3 tools/publish-release.py --repo "$GITHUB_REPOSITORY" \
+            --plan-file "$RUNNER_TEMP/signed-release/.release-plan/release-plan.json" \
+            --notes-file "$RUNNER_TEMP/signed-release/.release-plan/release-notes.md" \
+            --artifact-dir "$RUNNER_TEMP/signed-release/build/release" \
+            --expected-signer "$POCKET_NES_SIGNING_CERT_SHA256"
+
+  catch-up:
+    needs: [plan, publish]
+    if: needs.publish.result == 'success' && needs.plan.outputs.target_sha != needs.plan.outputs.head_sha
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      actions: write
+    steps:
+      - name: Resume unreleased main changes after recovering an older draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run release.yml --repo "$GITHUB_REPOSITORY" --ref main
