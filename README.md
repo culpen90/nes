@@ -157,6 +157,10 @@ This version provides one-player cartridge emulation. FDS disk images, second-pl
 
 Save states restore gameplay and video. Upstream FCEUmm does not serialize its high-quality audio resampler phase, so restored PCM is not guaranteed to be sample-identical. Details and JNI contracts are in the [native frontend notes](app/src/main/cpp/README.md).
 
+## Contributing
+
+For setup, testing, and pull request guidance, see [Contributing](CONTRIBUTING.md).
+
 ## License and credits
 
 Pocket NES and its native frontend are licensed under **GNU GPL version 2 or later**; see [COPYING](COPYING). FCEUmm is pinned at commit `7a542dab1e87679921962a9f056186eca425c0c2`, with upstream copyright and license notices preserved. See [third-party provenance](third_party/README.md).
