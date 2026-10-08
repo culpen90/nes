@@ -16,7 +16,7 @@ import java.util.concurrent.Executors;
 
 public final class MainActivity extends Activity implements EmulatorSession.Listener {
     private static final int BG = 0xff15171c, CARD = 0xff22252c, FG = 0xffefeadd, DIM = 0xff999da8, ACCENT = 0xffff6b4a;
-    private static final int IMPORT = 41;
+    private static final int IMPORT = 41, RELEASE_PERMISSION = 42;
     private final ExecutorService io = Executors.newSingleThreadExecutor();
     private LibraryStore library;
     private EmulatorSession session;
@@ -27,6 +27,8 @@ public final class MainActivity extends Activity implements EmulatorSession.List
     private Button pauseButton, importButton;
     private boolean paused, muted, ready, importing, destroyed;
     private int touchButtons, keyButtons, axisButtons;
+    private Switch releaseAlertSwitch;
+    private TextView releaseAlertStatus;
 
     @Override public void onCreate(Bundle saved) {
         super.onCreate(saved);
@@ -35,6 +37,8 @@ public final class MainActivity extends Activity implements EmulatorSession.List
         session = new EmulatorSession(this, this); session.setMuted(muted);
         if (android.os.Build.VERSION.SDK_INT >= 33) getOnBackInvokedDispatcher().registerOnBackInvokedCallback(android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT, this::handleBack);
         showLibrary();
+        ReleaseNotifications.createChannel(this);
+        getWindow().getDecorView().post(this::offerReleaseAlerts);
         io.execute(() -> {
             try { library.ensureDemo(); runOnUiThread(() -> { if (!destroyed) { ready = true; if (playing == null) showLibrary(); } }); }
             catch (IOException e) { runOnUiThread(() -> message("Demo could not be prepared: " + e.getMessage())); }
@@ -187,7 +191,75 @@ public final class MainActivity extends Activity implements EmulatorSession.List
         catch (android.content.pm.PackageManager.NameNotFoundException e) { version = ""; }
         new AlertDialog.Builder(this).setTitle("Pocket NES " + version)
                 .setMessage("A pocket-sized home for your NES cartridges.\n\nImport .nes files with the Android file picker. ZIP archives may contain one .nes game. Games and saves stay on your phone.\n\nStar Garden is an original included demo.\n\nEmulation: FCEUmm / libretro, licensed under GPL version 2 or later. Pocket NES is distributed under the same license.\n\nNintendo and NES are trademarks of Nintendo. This is an independent project.")
-                .setPositiveButton("Done", null).setNeutralButton("License", (d, w) -> showLicense()).show();
+                .setPositiveButton("Done", null).setNeutralButton("License", (d, w) -> showLicense())
+                .setNegativeButton("Updates", (d, w) -> showReleaseSettings()).show();
+    }
+    private void offerReleaseAlerts() {
+        if (destroyed || isFinishing() || ReleaseNotifications.prefs(this).getBoolean("asked", false)) return;
+        ReleaseNotifications.prefs(this).edit().putBoolean("asked", true).apply();
+        new AlertDialog.Builder(this).setTitle("New version alerts")
+                .setMessage("Get a notification when a new Pocket NES beta or stable version is available. Checks happen periodically while your phone is online. Games and saves stay on your phone.\n\nYou can change this later in Info → Updates.")
+                .setPositiveButton("Enable", (d, w) -> enableReleaseAlerts())
+                .setNegativeButton("Later", null).show();
+    }
+    private void showReleaseSettings() {
+        LinearLayout content = column(); content.setPadding(dp(24), dp(8), dp(24), dp(8));
+        content.addView(text("Get one alert for each new beta or stable version. Checks happen periodically while your phone is online. Tap an alert to view the release and download the APK.", 15, DIM));
+        addGap(content, 16);
+        releaseAlertSwitch = new Switch(this); releaseAlertSwitch.setText("Release alerts"); releaseAlertSwitch.setTextColor(FG);
+        releaseAlertSwitch.setChecked(ReleaseNotifications.isEnabled(this)); content.addView(releaseAlertSwitch);
+        addGap(content, 12); releaseAlertStatus = text("", 13, DIM); content.addView(releaseAlertStatus);
+        releaseAlertSwitch.setOnCheckedChangeListener((view, enabled) -> {
+            if (enabled == ReleaseNotifications.isEnabled(this)) return;
+            if (enabled) enableReleaseAlerts(); else ReleaseNotifications.setEnabled(this, false);
+            refreshReleaseSettings();
+        });
+        refreshReleaseSettings();
+        new AlertDialog.Builder(this).setTitle("Updates").setView(content)
+                .setPositiveButton("Done", null)
+                .setNeutralButton("View releases", (d, w) -> openReleasePage())
+                .setNegativeButton("Android settings", (d, w) -> openNotificationSettings())
+                .setOnDismissListener(d -> { releaseAlertSwitch = null; releaseAlertStatus = null; }).show();
+    }
+    private void enableReleaseAlerts() {
+        if (android.os.Build.VERSION.SDK_INT >= 33
+                && checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            if (ReleaseNotifications.prefs(this).getBoolean("permission-asked", false)
+                    && !shouldShowRequestPermissionRationale(android.Manifest.permission.POST_NOTIFICATIONS)) {
+                ReleaseNotifications.setEnabled(this, true); openNotificationSettings();
+            } else {
+                ReleaseNotifications.prefs(this).edit().putBoolean("permission-asked", true).apply();
+                requestPermissions(new String[]{android.Manifest.permission.POST_NOTIFICATIONS}, RELEASE_PERMISSION);
+            }
+            return;
+        }
+        ReleaseNotifications.setEnabled(this, true);
+        if (!ReleaseNotifications.canNotify(this)) message("Allow new version notifications in Android settings to receive alerts.");
+        else message("Release alerts enabled.");
+    }
+    @Override public void onRequestPermissionsResult(int request, String[] permissions, int[] results) {
+        super.onRequestPermissionsResult(request, permissions, results);
+        if (request != RELEASE_PERMISSION) return;
+        boolean allowed = results.length > 0 && results[0] == android.content.pm.PackageManager.PERMISSION_GRANTED;
+        ReleaseNotifications.setEnabled(this, allowed); refreshReleaseSettings();
+        message(allowed ? "Release alerts enabled." : "Release alerts are off. You can enable them in Info → Updates.");
+    }
+    private void refreshReleaseSettings() {
+        if (releaseAlertSwitch == null) return;
+        boolean enabled = ReleaseNotifications.isEnabled(this);
+        releaseAlertSwitch.setChecked(enabled);
+        releaseAlertStatus.setText(!enabled ? "Release alerts are off. Gameplay works offline."
+                : !ReleaseNotifications.canNotify(this) ? "Android is blocking notifications. Allow the New versions channel in Android settings."
+                : "Release alerts are on. Your games and saves stay on this phone.");
+    }
+    private void openNotificationSettings() {
+        Intent intent = new Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                .putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, getPackageName());
+        try { startActivity(intent); } catch (android.content.ActivityNotFoundException missing) { message("Notification settings are unavailable on this device."); }
+    }
+    private void openReleasePage() {
+        try { startActivity(ReleaseNotifications.browserIntent("https://github.com/culpen90/nes/releases")); }
+        catch (android.content.ActivityNotFoundException missing) { message("Install a browser to view Pocket NES releases."); }
     }
     private void showLicense() {
         String license;
@@ -231,7 +303,11 @@ public final class MainActivity extends Activity implements EmulatorSession.List
     @android.annotation.SuppressLint("GestureBackNavigation")
     @Override public void onBackPressed() { handleBack(); }
     @Override public void onConfigurationChanged(Configuration config) { super.onConfigurationChanged(config); releaseInput(); if (playing != null) showGame(); else showLibrary(); }
-    @Override protected void onResume() { super.onResume(); if (session != null) session.setForeground(true); }
+    @Override protected void onResume() {
+        super.onResume(); if (session != null) session.setForeground(true);
+        if (ReleaseNotifications.isEnabled(this)) { ReleaseNotifications.schedule(this); ReleaseNotifications.requestCheck(this, false); }
+        refreshReleaseSettings();
+    }
     @Override protected void onPause() { releaseInput(); session.setForeground(false); super.onPause(); }
     @Override protected void onDestroy() { destroyed = true; session.close(); io.shutdown(); super.onDestroy(); }
     @Override public void onWindowFocusChanged(boolean focused) { super.onWindowFocusChanged(focused); if (!focused && session != null) releaseInput(); }

@@ -1,5 +1,42 @@
 # Pocket NES releases
 
+## New version notifications
+
+In the app, open **Info → Updates** and turn on **Release alerts**. The app also
+offers this option once on first launch. Alerts start off, and choosing **Later**
+leaves them off. Android 13 / API 33 and later require notification permission;
+the app requests it when you enable alerts. If notifications are blocked, use
+**Android settings** in the Updates dialog and allow the **New versions** channel.
+
+Checks include published beta and stable releases with an uploaded APK. Each
+version newer than the installed app receives one notification, with delivered
+tags remembered on the device. Drafts, incomplete releases, and versions at or
+below the installed version do not produce alerts. When several updates were
+missed, the app posts up to three per check and leaves the others pending for
+later checks. This also respects Android's limit on active notifications.
+
+Enabled alerts schedule a check about every six hours with an available network.
+Opening the app also requests a check if the last successful check was at least
+an hour ago. The schedule survives reboot, but Android may defer checks for
+battery, network, or background restrictions. Force-stopping the app prevents
+background checks until it is opened again. Alerts are periodic checks rather
+than immediate push delivery, and API failures or rate limits are retried.
+
+Tap an alert to open that version's GitHub release page in your browser, then
+download and install the APK yourself. **View releases** in the Updates dialog
+opens the full release list. Official APK updates need the same signing key as
+the installed app; the app does not download or install updates automatically.
+Turning alerts off cancels scheduled checks and clears current release alerts.
+
+Gameplay remains offline and games and saves stay in private app storage. When
+alerts are enabled, the app makes HTTPS requests for public release metadata
+from `api.github.com`; it does not upload cartridges, saves, or a device identity.
+No GitHub account or notification service account is needed. The manifest now
+declares `INTERNET` and `ACCESS_NETWORK_STATE` for these optional checks,
+`RECEIVE_BOOT_COMPLETED` for persisted scheduling, and `POST_NOTIFICATIONS` for
+notification permission on supported Android versions. Opening a release page
+uses the selected browser's own network settings.
+
 ## Automatic releases
 
 The [releases page](https://github.com/culpen90/nes/releases) lists every beta and
