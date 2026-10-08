@@ -10,11 +10,13 @@ An original playable cartridge, **Star Garden**, is included. Open the app and t
 
 ## Download
 
-The first release is **1.0.0-beta.1**, for Android 8.0 or later on `arm64-v8a` and `x86_64` devices.
+Download the newest APK from the [releases page](https://github.com/culpen90/nes/releases), which includes beta and stable versions. Every automatic release includes a signed production APK with its own embedded version and checksums, for Android 8.0 or later on `arm64-v8a` and `x86_64` devices.
 
-- [GitHub beta release](https://github.com/culpen90/nes/releases/tag/v1.0.0-beta.1)
-- [Signed production APK](https://github.com/culpen90/nes/releases/download/v1.0.0-beta.1/pocket-nes-1.0.0-beta.1.apk)
-- [SHA-256 checksums](https://github.com/culpen90/nes/releases/download/v1.0.0-beta.1/SHA256SUMS)
+The historical first beta, **1.0.0-beta.1**, remains available:
+
+- [First beta release](https://github.com/culpen90/nes/releases/tag/v1.0.0-beta.1)
+- [First beta signed production APK](https://github.com/culpen90/nes/releases/download/v1.0.0-beta.1/pocket-nes-1.0.0-beta.1.apk)
+- [First beta SHA-256 checksums](https://github.com/culpen90/nes/releases/download/v1.0.0-beta.1/SHA256SUMS)
 
 See [release and signing instructions](docs/releases.md) for production builds, checksum verification, and updates.
 
@@ -22,7 +24,7 @@ See [release and signing instructions](docs/releases.md) for production builds, 
 
 - Import iNES / NES 2.0 `.nes` cartridges or a ZIP containing one game.
 - Multitouch D-pad, diagonal movement, A/B, Select, and Start.
-- Bluetooth/USB gamepad and keyboard input through Android controller events.
+- Android gamepad and keyboard event handling is implemented; external accessory hardware is currently unverified.
 - Sharp, aspect-correct video in portrait and landscape, with stereo audio.
 - Pause, restart, mute, and a quick-save slot for each cartridge.
 - Automatic resume and cartridge battery saves.
@@ -46,6 +48,11 @@ Imports are copied into app storage, so the original file can be moved afterward
 | B | B | B or X | Z |
 | Start | START | Start | Enter |
 | Select | SELECT | Select | Left/right Shift |
+
+Touch controls are the required first-stable input path. The gamepad and
+keyboard columns describe implemented mappings; external gamepads, controllers,
+mice, and hardware keyboards are optional test coverage and their absence does
+not block stable promotion. No mouse support is claimed.
 
 In **Star Garden**, collect gold stars with the astronaut. Hold **A** to move faster, press **B** for a tone, and press **Start** to reset. See [the demo notes](docs/demo.md) for its source and design. The **•••** menu offers sound, cartridge restart, and controller help.
 
@@ -81,7 +88,13 @@ The release variant uses a private signing key, R8 optimization, and resource sh
 ./tools/build-release.sh
 ```
 
-The first beta uses `versionName` **1.0.0-beta.1** and `versionCode` **1**. See [release builds](docs/releases.md) for signing configuration and output files. Android updates require the same signing key and an increased version code.
+The first beta uses `versionName` **1.0.0-beta.1** and `versionCode` **1**. Automated builds inject each release's version name and increasing version code, verify the APK's embedded values and official certificate, and publish the signed APK, checksums, and build provenance. See [release builds](docs/releases.md) for signing configuration and output files. Android updates require the same signing key and an increased version code.
+
+### Automatic release versions
+
+Merged pull requests targeting `main` automatically release **1.0.0-beta.N** until a merged PR includes the exact standalone body line `[release:stable]`. That requests the first stable **1.0.0**; subsequent releases are stable. Any contributor, including fork contributors, can propose the marker. Maintainers MUST verify the [mandatory first-stable criteria](CONTRIBUTING.md#mandatory-first-stable-acceptance-policy) before merging it; the bot does not assess those criteria.
+
+After promotion, `feat:` titles bump the minor version, Conventional Commit breaking-change titles or a `BREAKING CHANGE:` body line bump the major version, and other merged PRs bump the patch version. A standalone `[release:major]`, `[release:minor]`, or `[release:patch]` body line can override the inferred stable bump. See the [automatic release guide](docs/releases.md#automatic-releases) for the full marker rules, trusted signing setup, and recovery.
 
 ### Wireless debugging
 
